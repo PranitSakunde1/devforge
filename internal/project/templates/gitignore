@@ -1,0 +1,10 @@
+.env
+reports/*
+!reports/.gitkeep
+**/target/
+**/__pycache__/
+**/.pytest_cache/
+**/.coverage
+**/tmp/
+.idea/
+.vscode/

@@ -1,0 +1,113 @@
+name: devforge-workspace
+
+services:
+{{ if .Go }}
+  go-dev:
+    build:
+      context: ./services/go
+      dockerfile: Dockerfile
+    working_dir: /workspace
+    volumes:
+      - go-mod-cache:/go/pkg/mod
+    command: ["air", "-c", ".air.toml"]
+    ports: ["8081:8080"]
+    develop:
+      watch:
+        - action: sync
+          path: ./services/go
+          target: /workspace
+          ignore: ["tmp/", "vendor/"]
+{{ end }}
+{{ if .Java }}
+  java-dev:
+    build:
+      context: ./services/java
+      dockerfile: Dockerfile
+    working_dir: /workspace
+    volumes:
+      - maven-cache:/root/.m2
+    command: ["sh", "-c", "mvn -q compile spring-boot:run"]
+    ports: ["8082:8080"]
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./services/java/src
+          target: /workspace/src
+        - action: sync+restart
+          path: ./services/java/pom.xml
+          target: /workspace/pom.xml
+{{ end }}
+{{ if .Python }}
+  python-dev:
+    build:
+      context: ./services/python
+      dockerfile: Dockerfile
+    working_dir: /workspace
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports: ["8083:8000"]
+    develop:
+      watch:
+        - action: sync
+          path: ./services/python
+          target: /workspace
+          ignore: ["__pycache__/", ".pytest_cache/"]
+{{ end }}
+{{ if .Redis }}
+  redis:
+    image: redis:7.4.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+{{ end }}
+{{ if .Go }}
+  go-test:
+    profiles: ["test"]
+    build: { context: ./services/go }
+    working_dir: /workspace
+    volumes:
+      - ./services/go:/workspace
+      - go-mod-cache:/go/pkg/mod
+      - ./reports:/reports
+    command: ["sh", "-c", "gotestsum --junitfile /reports/junit/go.xml --format standard-verbose -- -coverprofile=/reports/coverage/go.out ./..."]
+{{ end }}
+{{ if .Java }}
+  java-test:
+    profiles: ["test"]
+    build: { context: ./services/java }
+    working_dir: /workspace
+    volumes:
+      - ./services/java:/workspace
+      - maven-cache:/root/.m2
+      - ./reports:/reports
+    command: ["sh", "-c", "mkdir -p /reports/junit/java /reports/coverage/java && mvn test jacoco:report"]
+{{ end }}
+{{ if .Python }}
+  python-test:
+    profiles: ["test"]
+    build: { context: ./services/python }
+    working_dir: /workspace
+    volumes:
+      - ./services/python:/workspace
+      - ./reports:/reports
+    command: ["pytest", "-q", "--junitxml=/reports/junit/python.xml", "--cov=app", "--cov-report=xml:/reports/coverage/python.xml"]
+{{ end }}
+  trivy:
+    profiles: ["security"]
+    image: aquasec/trivy:0.59.1
+    volumes:
+      - ./:/workspace:ro
+      - ./reports/security:/reports
+      - trivy-cache:/root/.cache/
+    entrypoint: ["trivy"]
+    command: ["fs", "--cache-dir", "/root/.cache", "--scanners", "vuln,misconfig,secret", "--format", "json", "--output", "/reports/trivy-fs.json", "/workspace"]
+
+volumes:
+  redis-data:
+  go-mod-cache:
+  maven-cache:
+  trivy-cache:

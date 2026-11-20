@@ -1,0 +1,7 @@
+devforge.exe
+*.exe
+reports/*
+!reports/.gitkeep
+.env
+.idea/
+.vscode/
